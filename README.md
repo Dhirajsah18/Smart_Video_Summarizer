@@ -1,4 +1,4 @@
-# AI Video Summarizer
+# Intelligent_Video_Summarization_Platform
 
 An AI-powered web application that automatically converts long videos into concise and meaningful summaries using modern Speech Recognition and Natural Language Processing models.
 
@@ -69,10 +69,10 @@ AI-video_summarizer/
 ---
 ## Screenshots
 ### Frontend
-![frontend](https://github.com/user-attachments/assets/d7104ccb-dc25-45a3-8d44-19edaafedec1)
+![frontend](https://github.com/user-attachments/assets/3c2da431-3a89-4ba1-8fb9-3fd751d15368)
 
 ### Output
-![output](https://github.com/user-attachments/assets/01d844e4-b308-4edb-8154-972287f0fa2b)
+![output](https://github.com/user-attachments/assets/11c6fd41-f6b3-4c07-8461-8ba83fb40b2d)
 
 ---
 
