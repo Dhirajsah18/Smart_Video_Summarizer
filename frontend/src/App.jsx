@@ -1,27 +1,42 @@
 import React, { useEffect, useRef, useState } from "react";
+import { saveAs } from "file-saver";
+import { Document, Packer, Paragraph, TextRun } from "docx";
+import { jsPDF } from "jspdf";
 import api from "./api";
+
+const processingStages = [
+  { key: "uploading", label: "Uploading Video" },
+  { key: "extracting", label: "Extracting Audio" },
+  { key: "transcribing", label: "Transcribing Speech" },
+  { key: "summarizing", label: "Generating Summary" },
+];
 
 export default function App() {
   const uploadBoxRef = useRef(null);
   const videoUploadRef = useRef(null);
   const videoPlayerRef = useRef(null);
+  const progressIntervalRef = useRef(null);
 
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("No file selected");
-
   const [previewURL, setPreviewURL] = useState(null);
 
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [progressStep, setProgressStep] = useState("");
-
   const [showResults, setShowResults] = useState(false);
-
   const [summaryHTML, setSummaryHTML] = useState(null);
-
+  const [transcriptText, setTranscriptText] = useState("");
+  const [transcriptSegments, setTranscriptSegments] = useState([]);
+  const [timeKeyPoints, setTimeKeyPoints] = useState([]);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [summaryLength, setSummaryLength] = useState("medium");
+  const [summaryStyle, setSummaryStyle] = useState("general");
+  const [outputLanguage, setOutputLanguage] = useState("english");
+  const [sourceLanguage, setSourceLanguage] = useState("auto");
+  const [includeKeyPoints, setIncludeKeyPoints] = useState(true);
   const [loadingSummarize, setLoadingSummarize] = useState(false);
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [progressStep, setProgressStep] = useState("Waiting to start");
+  const [progressStage, setProgressStage] = useState("uploading");
 
-  // Capture the element at effect run-time to avoid React ref change warning
   useEffect(() => {
     const videoElement = videoPlayerRef.current;
 
@@ -36,7 +51,6 @@ export default function App() {
     };
   }, []);
 
-  // Revoke previous previewURL when it changes / component unmounts
   useEffect(() => {
     const prev = previewURL;
     return () => {
@@ -50,19 +64,34 @@ export default function App() {
     };
   }, [previewURL]);
 
+  useEffect(() => {
+    return () => {
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    };
+  }, []);
+
   function handleBrowseClick() {
     videoUploadRef.current && videoUploadRef.current.click();
   }
 
   function onFileChange(e) {
     if (e.target.files && e.target.files.length > 0) {
-      const f = e.target.files[0];
-      handleFile(f);
+      const selectedFile = e.target.files[0];
+      handleFile(selectedFile);
     }
   }
 
-  function handleFile(f) {
-    if (f && f.type && f.type.startsWith("video/")) {
+  function handleFile(selectedFile) {
+    if (selectedFile && selectedFile.type && selectedFile.type.startsWith("video/")) {
+      if (selectedFile.size === 0) {
+        setFile(null);
+        setFileName("Selected file is empty. Please choose another video.");
+        setErrorMessage("Selected file is empty. Please choose another video.");
+        return;
+      }
+
       if (previewURL) {
         try {
           URL.revokeObjectURL(previewURL);
@@ -71,14 +100,14 @@ export default function App() {
         }
       }
 
-      setFile(f);
-      setFileName(f.name);
-
-      const fileURL = URL.createObjectURL(f);
-      setPreviewURL(fileURL);
+      setFile(selectedFile);
+      setFileName(selectedFile.name);
+      setErrorMessage("");
+      setPreviewURL(URL.createObjectURL(selectedFile));
     } else {
       setFile(null);
       setFileName("Please select a valid video file.");
+      setErrorMessage("Please select a valid video file.");
       if (previewURL) {
         try {
           URL.revokeObjectURL(previewURL);
@@ -92,54 +121,201 @@ export default function App() {
 
   function onDragOver(e) {
     e.preventDefault();
-    uploadBoxRef.current?.classList.add("border-blue-500", "bg-slate-50");
-  }
-  function onDragLeave() {
-    uploadBoxRef.current?.classList.remove("border-blue-500", "bg-slate-50");
-  }
-  function onDrop(e) {
-    e.preventDefault();
-    uploadBoxRef.current?.classList.remove("border-blue-500", "bg-slate-50");
-    const files = e.dataTransfer.files;
-    if (files.length > 0) handleFile(files[0]);
+    uploadBoxRef.current?.classList.add("border-amber-500", "bg-amber-50");
   }
 
-  function seekVideo(time) {
-    if (videoPlayerRef.current) {
-      videoPlayerRef.current.currentTime = time;
-      videoPlayerRef.current.play();
+  function onDragLeave() {
+    uploadBoxRef.current?.classList.remove("border-amber-500", "bg-amber-50");
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    uploadBoxRef.current?.classList.remove("border-amber-500", "bg-amber-50");
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFile(files[0]);
     }
   }
 
-  function simulateProcessing() {
-    const steps = [
-      { percent: 10, text: "Uploading video..." },
-      { percent: 25, text: "Extracting audio..." },
-      { percent: 50, text: "Transcribing speech to text..." },
-      { percent: 75, text: "Analyzing content..." },
-      { percent: 90, text: "Generating summaries..." },
-      { percent: 100, text: "Done!" },
-    ];
-
-    setProcessing(true);
-    setProgress(0);
-    setProgressStep("");
-
-    let current = 0;
-    const interval = setInterval(() => {
-      if (current >= steps.length) {
-        clearInterval(interval);
-        setProcessing(false);
-        return;
-      }
-      const st = steps[current];
-      setProgress(st.percent);
-      setProgressStep(st.text);
-      current++;
-    }, 1000);
+  function updateProgressByPercent(nextPercent) {
+    const safePercent = Math.max(0, Math.min(99, nextPercent));
+    setProgressPercent(safePercent);
+    if (safePercent < 30) {
+      setProgressStage("uploading");
+      setProgressStep("Uploading video");
+    } else if (safePercent < 55) {
+      setProgressStage("extracting");
+      setProgressStep("Extracting audio");
+    } else if (safePercent < 80) {
+      setProgressStage("transcribing");
+      setProgressStep("Transcribing speech");
+    } else {
+      setProgressStage("summarizing");
+      setProgressStep("Summarizing content");
+    }
   }
 
-  // --- API summarization (adapted to your backend /process-video) ---
+  function startProgressSimulation() {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+    }
+    progressIntervalRef.current = setInterval(() => {
+      setProgressPercent((prev) => {
+        let increment = 0.6;
+        if (prev < 30) increment = 1.4;
+        else if (prev < 55) increment = 1.1;
+        else if (prev < 80) increment = 0.8;
+        else if (prev >= 94) increment = 0;
+
+        const next = Math.min(94, prev + increment);
+        updateProgressByPercent(next);
+        return next;
+      });
+    }, 400);
+  }
+
+  function stopProgressSimulation() {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+  }
+
+  function makeSafeBaseName(name) {
+    const base = (name || "summary")
+      .replace(/\.[^/.]+$/, "")
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+      .trim();
+    return base || "summary";
+  }
+
+  function buildSummaryExportText() {
+    const lines = [];
+    lines.push("AI Video Summarizer Export");
+    lines.push("");
+    lines.push("Summary");
+    lines.push(summaryHTML || "No summary available.");
+    lines.push("");
+
+    if (timeKeyPoints.length > 0) {
+      lines.push("Time-Based Key Points");
+      timeKeyPoints.forEach((item, idx) => {
+        const label = `${item.start_label || "00:00"} - ${item.end_label || "00:00"}`;
+        lines.push(`${idx + 1}. [${label}] ${item.point || ""}`);
+      });
+      lines.push("");
+    }
+
+    lines.push("Transcript");
+    lines.push(transcriptText || "No transcript available.");
+    return lines.join("\n");
+  }
+
+  function handleDownloadTxt() {
+    const baseName = makeSafeBaseName(fileName);
+    const blob = new Blob([buildSummaryExportText()], { type: "text/plain;charset=utf-8" });
+    saveAs(blob, `${baseName}_summary.txt`);
+  }
+
+  function handleDownloadPdf() {
+    const baseName = makeSafeBaseName(fileName);
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const marginX = 44;
+    const marginY = 52;
+    const lineHeight = 18;
+    let cursorY = marginY;
+
+    const writeSection = (title, content) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      if (cursorY > pageHeight - marginY) {
+        doc.addPage();
+        cursorY = marginY;
+      }
+      doc.text(title, marginX, cursorY);
+      cursorY += lineHeight;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const wrapped = doc.splitTextToSize(content || "-", pageWidth - marginX * 2);
+      wrapped.forEach((line) => {
+        if (cursorY > pageHeight - marginY) {
+          doc.addPage();
+          cursorY = marginY;
+        }
+        doc.text(line, marginX, cursorY);
+        cursorY += 14;
+      });
+      cursorY += 10;
+    };
+
+    writeSection("Summary", summaryHTML || "No summary available.");
+    const keyPointsText =
+      timeKeyPoints.length > 0
+        ? timeKeyPoints
+            .map(
+              (item, idx) =>
+                `${idx + 1}. [${item.start_label || "00:00"} - ${item.end_label || "00:00"}] ${
+                  item.point || ""
+                }`
+            )
+            .join("\n")
+        : "No key points available.";
+    writeSection("Time-Based Key Points", keyPointsText);
+    writeSection("Transcript", transcriptText || "No transcript available.");
+
+    doc.save(`${baseName}_summary.pdf`);
+  }
+
+  async function handleDownloadDocx() {
+    const baseName = makeSafeBaseName(fileName);
+    const children = [
+      new Paragraph({
+        children: [new TextRun({ text: "AI Video Summarizer Export", bold: true, size: 30 })],
+        spacing: { after: 260 },
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: "Summary", bold: true, size: 26 })],
+      }),
+      new Paragraph(summaryHTML || "No summary available."),
+      new Paragraph(""),
+      new Paragraph({
+        children: [new TextRun({ text: "Time-Based Key Points", bold: true, size: 26 })],
+      }),
+    ];
+
+    if (timeKeyPoints.length === 0) {
+      children.push(new Paragraph("No key points available."));
+    } else {
+      timeKeyPoints.forEach((item, idx) => {
+        children.push(
+          new Paragraph(
+            `${idx + 1}. [${item.start_label || "00:00"} - ${item.end_label || "00:00"}] ${
+              item.point || ""
+            }`
+          )
+        );
+      });
+    }
+
+    children.push(new Paragraph(""));
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: "Transcript", bold: true, size: 26 })],
+      })
+    );
+    children.push(new Paragraph(transcriptText || "No transcript available."));
+
+    const doc = new Document({
+      sections: [{ properties: {}, children }],
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${baseName}_summary.docx`);
+  }
+
   const handleSummarizeAPI = async () => {
     if (!file) {
       alert("Please upload a video file");
@@ -148,71 +324,106 @@ export default function App() {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("summary_length", summaryLength);
+    formData.append("summary_style", summaryStyle);
+    formData.append("transcription_task", outputLanguage === "english" ? "translate" : "transcribe");
+    formData.append("source_language", sourceLanguage);
+    formData.append("include_key_points", String(includeKeyPoints));
 
-    // Show the results area and loader immediately so user sees progress
     setShowResults(true);
     setLoadingSummarize(true);
+    setErrorMessage("");
+    setSummaryHTML(null);
+    setTranscriptText("");
+    setTranscriptSegments([]);
+    setTimeKeyPoints([]);
+    setProgressPercent(5);
+    setProgressStage("uploading");
+    setProgressStep("Uploading video");
+    startProgressSimulation();
 
     try {
-      // Send request (long timeout for heavy processing)
       const res = await api.post("/process-video", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-        timeout: 10 * 60 * 1000, // 10 minutes — adjust if needed
+        timeout: 10 * 60 * 1000,
+        onUploadProgress: (event) => {
+          if (!event?.total) return;
+          const uploadedPercent = Math.round((event.loaded * 100) / event.total);
+          const scaledPercent = Math.min(25, 5 + uploadedPercent * 0.2);
+          setProgressPercent((prev) => {
+            const next = Math.max(prev, scaledPercent);
+            updateProgressByPercent(next);
+            return next;
+          });
+        },
       });
 
       const data = res.data || {};
       setSummaryHTML(data.summary || "No summary returned from server.");
+      setTranscriptText(data.transcript_text || "");
+      setTranscriptSegments(Array.isArray(data.transcript_segments) ? data.transcript_segments : []);
+      setTimeKeyPoints(Array.isArray(data.time_key_points) ? data.time_key_points : []);
+      stopProgressSimulation();
+      setProgressPercent(100);
+      setProgressStage("summarizing");
+      setProgressStep("Summary ready");
     } catch (e) {
-      console.error("Summarize API error:", e);
-      if (e?.response?.data) {
-        // server returned an error payload
-        setSummaryHTML(`Server error: ${JSON.stringify(e.response.data)}`);
+      stopProgressSimulation();
+      const backendPayload = e?.response?.data;
+      const status = e?.response?.status;
+      const backendDetail = backendPayload?.detail;
+      const debugInfo = {
+        message: e?.message || "Unknown error",
+        code: e?.code || null,
+        status: status || null,
+        detail: backendDetail || null,
+        response: backendPayload || null,
+        requestUrl: e?.config?.url || null,
+        baseURL: e?.config?.baseURL || null,
+      };
+
+      if (typeof backendDetail === "string" && backendDetail.trim()) {
+        setErrorMessage(backendDetail);
+      } else if (backendDetail) {
+        setErrorMessage(`Backend error: ${JSON.stringify(backendDetail)}`);
+      } else if (status) {
+        setErrorMessage(`Request failed with status ${status}. Check backend logs for details.`);
       } else {
-        setSummaryHTML(
-          "Network error or server did not respond. Check console."
-        );
+        setErrorMessage("Network/CORS error. Backend may be down or blocked by CORS.");
       }
+      console.error("Summarize API error (raw):", e);
+      console.error("Summarize API error (debug):", debugInfo);
     } finally {
-      // hide loader (keep results visible and interactive)
       setLoadingSummarize(false);
-      // reset simple progress UI if it was used
-      setProcessing(false);
-      setProgress(100);
-      setProgressStep("Done!");
     }
   };
 
-  // Single button handler — non-blocking UI
   async function onSummarizeClick() {
-    // show results panel with loader, then fetch
     await handleSummarizeAPI();
   }
 
   return (
-    <div className="container mx-auto p-4 md:p-8 max-w-6xl">
-      <header className="text-center mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-slate-900">
+    <div className="container mx-auto px-4 py-6 md:px-8 md:py-10 max-w-7xl min-h-screen">
+      <header className="text-center mb-8 md:mb-10">
+        <h1 className="mt-4 text-3xl md:text-5xl font-bold text-slate-900 tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
           AI Video Summarizer
         </h1>
-        <p className="text-slate-600 mt-2">
-          Upload a video to get a smart summary, key moments, and more.
+        <p className="text-slate-700 mt-3 text-sm md:text-base max-w-2xl mx-auto">
+          Convert long videos into crisp summaries with multilingual transcription and translation support.
         </p>
       </header>
 
       <main id="main-content">
-        {/* Upload Section */}
-        {!processing && !showResults && (
+        {!showResults && (
           <div
             id="upload-section"
-            className="bg-white p-6 md:p-8 rounded-2xl shadow-md border border-slate-200"
+            className="bg-white/95 backdrop-blur-sm p-5 md:p-8 rounded-2xl shadow-lg border border-slate-200"
           >
-            <h2 className="text-xl font-semibold mb-4 text-slate-800">
-              1. Start Here
-            </h2>
+            <h2 className="text-xl font-semibold mb-4 text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>1. Start Here</h2>
             <div
               id="upload-box"
               ref={uploadBoxRef}
-              className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-slate-50 transition-colors"
+              className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-amber-500 hover:bg-amber-50 transition-colors"
               onClick={handleBrowseClick}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -241,20 +452,14 @@ export default function App() {
                     d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
                   />
                 </svg>
-                <p className="font-semibold text-slate-700">
-                  Click to browse or drag & drop your video file
-                </p>
-                <p id="file-name" className="text-sm text-slate-500 mt-1">
-                  {fileName}
-                </p>
+                <p className="font-semibold text-slate-700">Click to browse or drag & drop your video file</p>
+                <p id="file-name" className="text-sm text-slate-500 mt-1">{fileName}</p>
               </div>
             </div>
 
             <div className="mt-6">
-              <h3 className="font-semibold text-slate-800 mb-3">
-                2. Configure Summary
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <h3 className="font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>2. Configure Summary</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 <div>
                   <label
                     htmlFor="summary-length"
@@ -264,12 +469,12 @@ export default function App() {
                   </label>
                   <select
                     id="summary-length"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    value={summaryLength}
+                    onChange={(e) => setSummaryLength(e.target.value)}
                   >
                     <option value="short">Short</option>
-                    <option value="medium" defaultValue>
-                      Medium
-                    </option>
+                    <option value="medium">Medium</option>
                     <option value="long">Detailed</option>
                   </select>
                 </div>
@@ -282,26 +487,79 @@ export default function App() {
                   </label>
                   <select
                     id="summary-style"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    value={summaryStyle}
+                    onChange={(e) => setSummaryStyle(e.target.value)}
                   >
-                    <option value="general" defaultValue>
-                      General
-                    </option>
+                    <option value="general">General</option>
                     <option value="business">Business-focused</option>
                     <option value="student">Student-focused</option>
                     <option value="casual">Casual</option>
                   </select>
                 </div>
+                <div>
+                  <label
+                    htmlFor="output-language"
+                    className="block text-sm font-medium text-slate-600 mb-1"
+                  >
+                    Summary Language
+                  </label>
+                  <select
+                    id="output-language"
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    value={outputLanguage}
+                    onChange={(e) => setOutputLanguage(e.target.value)}
+                  >
+                    <option value="english">English (translate if needed)</option>
+                    <option value="original">Original spoken language</option>
+                  </select>
+                </div>
+                <div>
+                  <label
+                    htmlFor="source-language"
+                    className="block text-sm font-medium text-slate-600 mb-1"
+                  >
+                    Video Speech Language
+                  </label>
+                  <select
+                    id="source-language"
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    value={sourceLanguage}
+                    onChange={(e) => setSourceLanguage(e.target.value)}
+                  >
+                    <option value="auto">Auto detect</option>
+                    <option value="en">English</option>
+                    <option value="hi">Hindi</option>
+                    <option value="bn">Bengali</option>
+                    <option value="ta">Tamil</option>
+                    <option value="te">Telugu</option>
+                    <option value="mr">Marathi</option>
+                    <option value="gu">Gujarati</option>
+                    <option value="kn">Kannada</option>
+                    <option value="ml">Malayalam</option>
+                    <option value="pa">Punjabi</option>
+                    <option value="ur">Urdu</option>
+                    <option value="or">Odia</option>
+                    <option value="as">Assamese</option>
+                  </select>
+                </div>
               </div>
+              <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                  checked={includeKeyPoints}
+                  onChange={(e) => setIncludeKeyPoints(e.target.checked)}
+                />
+                Generate time-based key points (slightly slower)
+              </label>
             </div>
 
-            <div className="mt-6 text-center">
+            <div className="mt-6 text-center md:text-right">
               <button
                 id="summarize-btn"
-                className={`bg-blue-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-blue-700 transition-all shadow-sm ${
-                  !file
-                    ? "disabled:bg-slate-400 disabled:cursor-not-allowed"
-                    : ""
+                className={`bg-slate-900 text-white font-bold py-3 px-8 rounded-lg hover:bg-amber-500 hover:text-slate-950 transition-all shadow-md ${
+                  !file ? "disabled:bg-slate-400 disabled:text-white disabled:cursor-not-allowed" : ""
                 }`}
                 disabled={!file}
                 onClick={onSummarizeClick}
@@ -312,43 +570,11 @@ export default function App() {
           </div>
         )}
 
-        {/* Processing Section — you can still use this if desired */}
-        {processing && (
-          <div
-            id="processing-section"
-            className="bg-white p-8 rounded-2xl shadow-md border border-slate-200 mt-8"
-          >
-            <div className="flex items-center justify-center flex-col">
-              <div className="loader"></div>
-              <p
-                id="progress-text"
-                className="mt-4 font-semibold text-slate-700"
-              >
-                Processing your video...
-              </p>
-              <div className="w-full bg-slate-200 rounded-full h-2.5 mt-4">
-                <div
-                  id="progress-bar"
-                  className="bg-blue-600 h-2.5 rounded-full"
-                  style={{ width: `${progress}%` }}
-                ></div>
-              </div>
-              <p id="progress-step" className="text-sm text-slate-500 mt-2">
-                {progressStep}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Results Section: Summary only */}
         {showResults && (
           <div id="results-section" className="mt-8">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Left Column: Video Player */}
-              <div className="lg:col-span-1 bg-white p-4 rounded-2xl shadow-md border border-slate-200 h-fit">
-                <h2 className="text-xl font-semibold mb-4 text-slate-800">
-                  Video Preview
-                </h2>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
+              <div className="xl:col-span-1 bg-white/95 backdrop-blur-sm p-4 md:p-5 rounded-2xl shadow-lg border border-slate-200 h-fit">
+                <h2 className="text-xl font-semibold mb-4 text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Video Preview</h2>
                 <video
                   id="video-player"
                   className="w-full rounded-lg"
@@ -358,36 +584,140 @@ export default function App() {
                 />
               </div>
 
-              {/* Right Column: Summary only */}
-              <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-md border border-slate-200">
+              <div className="xl:col-span-2 bg-white/95 backdrop-blur-sm p-5 md:p-6 rounded-2xl shadow-lg border border-slate-200">
                 <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-slate-800">
-                    Summary
-                  </h2>
+                  <h2 className="text-xl font-semibold text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Summary</h2>
                 </div>
+                {errorMessage && (
+                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
+                    {errorMessage}
+                  </div>
+                )}
 
-                {/* Loader while summary is loading */}
                 {loadingSummarize ? (
-                  <div className="flex flex-col items-center justify-center py-12">
-                    <div className="loader"></div>
-                    <p className="mt-4 font-semibold text-slate-700">
-                      Loading summary...
-                    </p>
-                    <p className="text-sm text-slate-500 mt-2">
-                      This may take a while depending on video length — please
-                      don't close the tab.
+                  <div className="py-8">
+                    <p className="font-semibold text-slate-800 mb-3">{progressStep}</p>
+                    <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden">
+                      <div
+                        className="progress-fill h-full rounded-full transition-all duration-500"
+                        style={{ width: `${progressPercent}%` }}
+                      ></div>
+                    </div>
+                    <div className="mt-2 flex justify-between text-xs text-slate-600">
+                      <span>Processing</span>
+                      <span>{Math.round(progressPercent)}%</span>
+                    </div>
+
+                    <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {processingStages.map((stage) => {
+                        const stageOrder = processingStages.findIndex((item) => item.key === stage.key);
+                        const activeOrder = processingStages.findIndex((item) => item.key === progressStage);
+                        const isDone = stageOrder < activeOrder;
+                        const isActive = stage.key === progressStage;
+
+                        return (
+                          <div
+                            key={stage.key}
+                            className={`rounded-xl border px-3 py-2 text-sm ${
+                              isActive
+                                ? "border-amber-400 bg-amber-50 text-amber-900"
+                                : isDone
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                                  : "border-slate-200 bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            {stage.label}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-sm text-slate-500 mt-4">
+                      Keep this tab open while your video is being processed.
                     </p>
                   </div>
                 ) : (
-                  <div
-                    id="content-text"
-                    className="space-y-4 custom-scrollbar"
-                    style={{ maxHeight: 500, overflowY: "auto" }}
-                  >
-                    <p className="text-slate-600 leading-relaxed">
-                      {summaryHTML ||
-                        "Your paragraph summary will appear here. It will be a concise overview of the video's content."}
-                    </p>
+                  <div className="space-y-6">
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleDownloadTxt}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                        disabled={!summaryHTML}
+                      >
+                        Download TXT
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadPdf}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                        disabled={!summaryHTML}
+                      >
+                        Download PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadDocx}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
+                        disabled={!summaryHTML}
+                      >
+                        Download DOCX
+                      </button>
+                    </div>
+
+                    <div
+                      id="content-text"
+                      className="space-y-4 custom-scrollbar"
+                      style={{ maxHeight: 260, overflowY: "auto" }}
+                    >
+                      <p className="text-slate-600 leading-relaxed">
+                        {summaryHTML ||
+                          "Your paragraph summary will appear here. It will be a concise overview of the video's content."}
+                      </p>
+                    </div>
+
+                    {includeKeyPoints && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                          Time-Based Key Points
+                        </h3>
+                        <div className="space-y-2">
+                          {timeKeyPoints.length > 0 ? (
+                            timeKeyPoints.map((item, idx) => (
+                              <div key={`${item.start}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-xs font-semibold text-amber-700 mb-1">
+                                  {item.start_label || "00:00"} - {item.end_label || "00:00"}
+                                </p>
+                                <p className="text-sm text-slate-700">{item.point}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">Key points will appear after processing.</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                        Full Transcript
+                      </h3>
+                      <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                        {transcriptSegments.length > 0 ? (
+                          transcriptSegments.map((segment, idx) => (
+                            <div key={`${segment.start}-${idx}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-xs font-semibold text-slate-500 mb-1">
+                                {segment.start_label || "00:00"} - {segment.end_label || "00:00"}
+                              </p>
+                              <p className="text-sm text-slate-700">{segment.text}</p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            Transcript will appear here after processing.
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
