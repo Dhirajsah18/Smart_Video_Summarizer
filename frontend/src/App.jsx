@@ -772,7 +772,7 @@ export default function App() {
                             </p>
                           </div>
                           <p className="text-xs font-medium text-slate-500">
-                            Fixed answer length: 100-150 words
+                            Grounded answers from transcript evidence
                           </p>
                         </div>
 

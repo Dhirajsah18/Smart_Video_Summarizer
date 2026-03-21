@@ -1,6 +1,10 @@
 import re
 from collections import Counter
 
+MIN_CHUNK_SCORE_FOR_GROUNDED = 0.8
+MIN_SENTENCE_SCORE_FOR_GROUNDED = 0.7
+MIN_QUERY_COVERAGE = 0.2
+
 STOPWORDS = {
     "a",
     "about",
@@ -188,6 +192,30 @@ def _score_sentence(sentence, query_tokens):
     return overlap + coverage + min(len(sentence.split()) / 45, 1.0)
 
 
+def _query_coverage_ratio(query_tokens, text):
+    if not query_tokens:
+        return 0.0
+    text_tokens = set(_meaningful_tokens(text))
+    if not text_tokens:
+        return 0.0
+    matched = sum(1 for token in query_tokens if token in text_tokens)
+    return matched / max(1, len(query_tokens))
+
+
+def _insufficient_evidence_answer(question):
+    return {
+        "question": question,
+        "answer": (
+            "I could not find enough clear evidence in this transcript to answer that reliably. "
+            "Please ask about a specific part of the video, a timestamp, or use keywords that appear in the transcript."
+        ),
+        "sources": [],
+        "word_count": 31,
+        "grounded": False,
+        "confidence": "low",
+    }
+
+
 def _query_expansion_tokens(question):
     question_lower = (question or "").lower()
     expanded = []
@@ -319,9 +347,7 @@ def answer_question_from_transcript(question, transcript_text, transcript_segmen
     chunks = retrieve_relevant_chunks(normalized_question, transcript_segments, max_chunks=4)
     context_parts = []
     for chunk in chunks:
-        context_parts.append(
-            f"Timestamp {int(chunk['start'])} to {int(chunk['end'])}: {chunk['text']}"
-        )
+        context_parts.append(chunk["text"])
 
     if not context_parts and transcript_text:
         context_parts.append(transcript_text[:2500])
@@ -329,9 +355,20 @@ def answer_question_from_transcript(question, transcript_text, transcript_segmen
     if not context_parts:
         raise ValueError("Transcript is required to answer questions about the video.")
 
-    combined_context = " ".join(context_parts)
-    query_token_list = _meaningful_tokens(normalized_question) + _query_expansion_tokens(normalized_question)
+    core_query_tokens = Counter(_meaningful_tokens(normalized_question))
+    query_token_list = list(core_query_tokens.elements()) + _query_expansion_tokens(normalized_question)
     query_tokens = Counter(query_token_list)
+    if not core_query_tokens:
+        return _insufficient_evidence_answer(normalized_question)
+
+    chunk_scores = [_score_chunk(chunk, core_query_tokens) for chunk in chunks]
+    best_chunk_score = max(chunk_scores) if chunk_scores else 0.0
+    combined_context = " ".join(context_parts)
+    coverage_ratio = _query_coverage_ratio(core_query_tokens, combined_context)
+
+    if best_chunk_score < MIN_CHUNK_SCORE_FOR_GROUNDED or coverage_ratio < MIN_QUERY_COVERAGE:
+        return _insufficient_evidence_answer(normalized_question)
+
     candidate_sentences = _dedupe_sentences(_split_sentences(combined_context))
 
     ranked_sentences = sorted(
@@ -343,18 +380,19 @@ def answer_question_from_transcript(question, transcript_text, transcript_segmen
     selected_sentences = []
     word_total = 0
     for sentence in ranked_sentences:
-        if _score_sentence(sentence, query_tokens) <= 0:
+        sentence_score = _score_sentence(sentence, query_tokens)
+        if sentence_score < MIN_SENTENCE_SCORE_FOR_GROUNDED:
             continue
         selected_sentences.append(sentence)
         word_total += len(sentence.split())
-        if word_total >= 95:
+        if word_total >= 85:
             break
 
     if not selected_sentences:
-        selected_sentences = candidate_sentences[:4]
+        return _insufficient_evidence_answer(normalized_question)
 
     answer = " ".join(selected_sentences).strip()
-    answer = _trim_to_word_range(answer, min_words=70, max_words=130, fallback_text=combined_context)
+    answer = _trim_to_word_range(answer, min_words=45, max_words=120, fallback_text="")
 
     source_chunks = [
         {
@@ -370,4 +408,6 @@ def answer_question_from_transcript(question, transcript_text, transcript_segmen
         "answer": answer,
         "sources": source_chunks,
         "word_count": len(answer.split()),
+        "grounded": True,
+        "confidence": "high" if best_chunk_score >= (MIN_CHUNK_SCORE_FOR_GROUNDED + 0.9) else "medium",
     }

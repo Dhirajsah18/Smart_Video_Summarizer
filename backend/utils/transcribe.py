@@ -1,13 +1,18 @@
 import os
 
+import torch
 import whisper
 
 DEFAULT_MODEL_NAME = os.getenv("WHISPER_MODEL", "tiny").strip() or "tiny"
 ENGLISH_MODEL_NAME = os.getenv("WHISPER_ENGLISH_MODEL", "tiny.en").strip() or "tiny.en"
-WHISPER_BEAM_SIZE = max(1, int(os.getenv("WHISPER_BEAM_SIZE", "2")))
-WHISPER_BEST_OF = max(1, int(os.getenv("WHISPER_BEST_OF", "2")))
+WHISPER_BEAM_SIZE = max(1, int(os.getenv("WHISPER_BEAM_SIZE", "1")))
+WHISPER_BEST_OF = max(1, int(os.getenv("WHISPER_BEST_OF", "1")))
+WHISPER_CPU_THREADS = max(0, int(os.getenv("WHISPER_CPU_THREADS", "0")))
 
 _models = {}
+
+if WHISPER_CPU_THREADS > 0:
+    torch.set_num_threads(WHISPER_CPU_THREADS)
 
 
 def _resolve_model_name(task="translate", language=None):
