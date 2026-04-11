@@ -1,4 +1,4 @@
-# AI Video Summarizer
+# Smart Video Summarizer
 
 AI-powered full-stack app that takes a video, extracts speech, generates a clean summary, and supports grounded Q&A from the transcript.
 
