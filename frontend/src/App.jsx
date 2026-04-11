@@ -3,6 +3,9 @@ import { saveAs } from "file-saver";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { jsPDF } from "jspdf";
 import api from "./api";
+import AppHeader from "./components/AppHeader";
+import UploadSection from "./components/UploadSection";
+import ResultsSection from "./components/ResultsSection";
 
 const processingStages = [
   { key: "uploading", label: "Uploading Video" },
@@ -355,6 +358,7 @@ export default function App() {
     formData.append("file", file);
     formData.append("summary_length", summaryLength);
     formData.append("summary_style", summaryStyle);
+    formData.append("output_language", outputLanguage);
     formData.append("transcription_task", outputLanguage === "english" ? "translate" : "transcribe");
     formData.append("source_language", sourceLanguage);
     formData.append("include_key_points", String(includeKeyPoints));
@@ -489,437 +493,61 @@ export default function App() {
 
   return (
     <div className="container mx-auto px-4 py-6 md:px-8 md:py-10 max-w-7xl min-h-screen">
-      <header className="text-center mb-8 md:mb-10">
-        <h1 className="mt-4 text-3xl md:text-5xl font-bold text-slate-900 tracking-tight" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-          AI Video Summarizer
-        </h1>
-        <p className="text-slate-700 mt-3 text-sm md:text-base max-w-2xl mx-auto">
-          Convert long videos into crisp summaries with multilingual transcription and translation support.
-        </p>
-      </header>
+      <AppHeader />
 
       <main id="main-content">
         {!showResults && (
-          <div
-            id="upload-section"
-            className="bg-white/95 backdrop-blur-sm p-5 md:p-8 rounded-2xl shadow-lg border border-slate-200"
-          >
-            <h2 className="text-xl font-semibold mb-4 text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>1. Start Here</h2>
-            <div
-              id="upload-box"
-              ref={uploadBoxRef}
-              className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:border-amber-500 hover:bg-amber-50 transition-colors"
-              onClick={handleBrowseClick}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-            >
-              <input
-                type="file"
-                id="video-upload"
-                ref={videoUploadRef}
-                className="hidden"
-                accept="video/*"
-                onChange={onFileChange}
-              />
-              <div className="flex flex-col items-center">
-                <svg
-                  className="w-12 h-12 text-slate-400 mb-4"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-                  />
-                </svg>
-                <p className="font-semibold text-slate-700">Click to browse or drag & drop your video file</p>
-                <p id="file-name" className="text-sm text-slate-500 mt-1">{fileName}</p>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <h3 className="font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>2. Configure Summary</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                <div>
-                  <label
-                    htmlFor="summary-length"
-                    className="block text-sm font-medium text-slate-600 mb-1"
-                  >
-                    Summary Length
-                  </label>
-                  <select
-                    id="summary-length"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                    value={summaryLength}
-                    onChange={(e) => setSummaryLength(e.target.value)}
-                  >
-                    <option value="short">Short</option>
-                    <option value="medium">Medium</option>
-                    <option value="long">Detailed</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="summary-style"
-                    className="block text-sm font-medium text-slate-600 mb-1"
-                  >
-                    Summary Style
-                  </label>
-                  <select
-                    id="summary-style"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                    value={summaryStyle}
-                    onChange={(e) => setSummaryStyle(e.target.value)}
-                  >
-                    <option value="general">General</option>
-                    <option value="business">Business-focused</option>
-                    <option value="student">Student-focused</option>
-                    <option value="casual">Casual</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="output-language"
-                    className="block text-sm font-medium text-slate-600 mb-1"
-                  >
-                    Summary Language
-                  </label>
-                  <select
-                    id="output-language"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                    value={outputLanguage}
-                    onChange={(e) => setOutputLanguage(e.target.value)}
-                  >
-                    <option value="english">English (translate if needed)</option>
-                    <option value="original">Original spoken language</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    htmlFor="source-language"
-                    className="block text-sm font-medium text-slate-600 mb-1"
-                  >
-                    Video Speech Language
-                  </label>
-                  <select
-                    id="source-language"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-                    value={sourceLanguage}
-                    onChange={(e) => setSourceLanguage(e.target.value)}
-                  >
-                    <option value="auto">Auto detect</option>
-                    <option value="en">English</option>
-                    <option value="hi">Hindi</option>
-                    <option value="bn">Bengali</option>
-                    <option value="ta">Tamil</option>
-                    <option value="te">Telugu</option>
-                    <option value="mr">Marathi</option>
-                    <option value="gu">Gujarati</option>
-                    <option value="kn">Kannada</option>
-                    <option value="ml">Malayalam</option>
-                    <option value="pa">Punjabi</option>
-                    <option value="ur">Urdu</option>
-                    <option value="or">Odia</option>
-                    <option value="as">Assamese</option>
-                  </select>
-                </div>
-              </div>
-              <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
-                  checked={includeKeyPoints}
-                  onChange={(e) => setIncludeKeyPoints(e.target.checked)}
-                />
-                Generate time-based key points (slightly slower)
-              </label>
-            </div>
-
-            <div className="mt-6 text-center md:text-right">
-              <button
-                id="summarize-btn"
-                className={`bg-slate-900 text-white font-bold py-3 px-8 rounded-lg hover:bg-amber-500 hover:text-slate-950 transition-all shadow-md ${
-                  !file ? "disabled:bg-slate-400 disabled:text-white disabled:cursor-not-allowed" : ""
-                }`}
-                disabled={!file}
-                onClick={onSummarizeClick}
-              >
-                Summarize Video
-              </button>
-            </div>
-          </div>
+          <UploadSection
+            uploadBoxRef={uploadBoxRef}
+            videoUploadRef={videoUploadRef}
+            fileName={fileName}
+            summaryLength={summaryLength}
+            setSummaryLength={setSummaryLength}
+            summaryStyle={summaryStyle}
+            setSummaryStyle={setSummaryStyle}
+            outputLanguage={outputLanguage}
+            setOutputLanguage={setOutputLanguage}
+            sourceLanguage={sourceLanguage}
+            setSourceLanguage={setSourceLanguage}
+            includeKeyPoints={includeKeyPoints}
+            setIncludeKeyPoints={setIncludeKeyPoints}
+            file={file}
+            handleBrowseClick={handleBrowseClick}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onFileChange={onFileChange}
+            onSummarizeClick={onSummarizeClick}
+          />
         )}
 
         {showResults && (
-          <div id="results-section" className="mt-8">
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 md:gap-8">
-              <div className="xl:col-span-1 bg-white/95 backdrop-blur-sm p-4 md:p-5 rounded-2xl shadow-lg border border-slate-200 h-fit">
-                <h2 className="text-xl font-semibold mb-4 text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Video Preview</h2>
-                <video
-                  id="video-player"
-                  className="w-full rounded-lg"
-                  controls
-                  ref={videoPlayerRef}
-                  src={previewURL || undefined}
-                />
-              </div>
-
-              <div className="xl:col-span-2 bg-white/95 backdrop-blur-sm p-5 md:p-6 rounded-2xl shadow-lg border border-slate-200">
-                <div className="mb-4">
-                  <h2 className="text-xl font-semibold text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>Summary</h2>
-                </div>
-                {errorMessage && (
-                  <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
-                    {errorMessage}
-                  </div>
-                )}
-
-                {loadingSummarize ? (
-                  <div className="py-8">
-                    <p className="font-semibold text-slate-800 mb-3">{progressStep}</p>
-                    <div className="h-3 w-full rounded-full bg-slate-200 overflow-hidden">
-                      <div
-                        className="progress-fill h-full rounded-full transition-all duration-500"
-                        style={{ width: `${progressPercent}%` }}
-                      ></div>
-                    </div>
-                    <div className="mt-2 flex justify-between text-xs text-slate-600">
-                      <span>Processing</span>
-                      <span>{Math.round(progressPercent)}%</span>
-                    </div>
-
-                    <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {processingStages.map((stage) => {
-                        const stageOrder = processingStages.findIndex((item) => item.key === stage.key);
-                        const activeOrder = processingStages.findIndex((item) => item.key === progressStage);
-                        const isDone = stageOrder < activeOrder;
-                        const isActive = stage.key === progressStage;
-
-                        return (
-                          <div
-                            key={stage.key}
-                            className={`rounded-xl border px-3 py-2 text-sm ${
-                              isActive
-                                ? "border-amber-400 bg-amber-50 text-amber-900"
-                                : isDone
-                                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                                  : "border-slate-200 bg-slate-50 text-slate-600"
-                            }`}
-                          >
-                            {stage.label}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p className="text-sm text-slate-500 mt-4">
-                      Keep this tab open while your video is being processed.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={handleDownloadTxt}
-                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
-                        disabled={!summaryHTML}
-                      >
-                        Download TXT
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDownloadPdf}
-                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
-                        disabled={!summaryHTML}
-                      >
-                        Download PDF
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDownloadDocx}
-                        className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50"
-                        disabled={!summaryHTML}
-                      >
-                        Download DOCX
-                      </button>
-                    </div>
-
-                    <div
-                      id="content-text"
-                      className="space-y-4 custom-scrollbar"
-                      style={{ maxHeight: 260, overflowY: "auto" }}
-                    >
-                      <p className="text-slate-600 leading-relaxed whitespace-pre-line">
-                        {summaryHTML ||
-                          "Your paragraph summary will appear here. It will be a concise overview of the video's content."}
-                      </p>
-                    </div>
-
-                    {summaryHTML && (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:p-5">
-                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <h3 className="text-lg font-semibold text-slate-800" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                              Ask About This Video
-                            </h3>
-                            <p className="text-sm text-slate-600">
-                              Would you like to know more about this topic?
-                            </p>
-                          </div>
-                          <p className="text-xs font-medium text-slate-500">
-                            Grounded answers from transcript evidence
-                          </p>
-                        </div>
-
-                        {suggestedQuestions.length > 0 && (
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {suggestedQuestions.map((question) => (
-                              <button
-                                key={question}
-                                type="button"
-                                onClick={() => askVideoQuestion(question)}
-                                className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:border-amber-400 hover:bg-amber-50 hover:text-slate-900"
-                              >
-                                {question}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-4 flex flex-col gap-3 md:flex-row">
-                          <input
-                            type="text"
-                            value={questionInput}
-                            onChange={(e) => setQuestionInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                askVideoQuestion();
-                              }
-                            }}
-                            placeholder="Ask something based on the transcript"
-                            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none focus:border-amber-500"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => askVideoQuestion()}
-                            disabled={loadingQA || !transcriptSegments.length}
-                            className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-500 hover:text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-400"
-                          >
-                            {loadingQA ? "Thinking..." : "Ask"}
-                          </button>
-                        </div>
-
-                        {qaError && (
-                          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                            {qaError}
-                          </div>
-                        )}
-
-                        {qaAnswer && (
-                          <div className="mt-4 space-y-4">
-                            <div className="rounded-xl border border-amber-200 bg-white p-4">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                                Answer
-                              </p>
-                              <p className="mt-2 text-sm leading-7 text-slate-700 whitespace-pre-line">
-                                {qaAnswer}
-                              </p>
-                            </div>
-
-                            {qaSources.length > 0 && (
-                              <div>
-                                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                  Transcript Sources
-                                </p>
-                                <div className="space-y-2">
-                                  {qaSources.map((source, idx) => (
-                                    <div key={`${source.start}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-3">
-                                      <button
-                                        type="button"
-                                        onClick={() => seekVideoTo(source.start)}
-                                        className="rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                                      >
-                                        {source.start_label || "00:00"} - {source.end_label || "00:00"}
-                                      </button>
-                                      <p className="mt-2 text-sm text-slate-600">
-                                        {source.text}
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {includeKeyPoints && (
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                          Time-Based Key Points
-                        </h3>
-                        <div className="space-y-2">
-                          {timeKeyPoints.length > 0 ? (
-                            timeKeyPoints.map((item, idx) => (
-                              <div key={`${item.start}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                                <p className="text-xs font-semibold text-amber-700 mb-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => seekVideoTo(item.start)}
-                                    className="rounded border border-amber-200 bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-amber-200"
-                                    title="Jump video to this point"
-                                  >
-                                    {item.start_label || "00:00"} - {item.end_label || "00:00"}
-                                  </button>
-                                </p>
-                                <p className="text-sm text-slate-700">{item.point}</p>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-sm text-slate-500">Key points will appear after processing.</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
-                        Full Transcript
-                      </h3>
-                      <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                        {transcriptSegments.length > 0 ? (
-                          transcriptSegments.map((segment, idx) => (
-                            <div key={`${segment.start}-${idx}`} className="rounded-lg border border-slate-200 bg-white p-3">
-                              <button
-                                type="button"
-                                onClick={() => seekVideoTo(segment.start)}
-                                className="mb-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
-                                title="Jump video to this timestamp"
-                              >
-                                {segment.start_label || "00:00"} - {segment.end_label || "00:00"}
-                              </button>
-                              <p className="text-sm text-slate-700">{segment.text}</p>
-                            </div>
-                          ))
-                        ) : (
-                          <p className="text-sm text-slate-500">
-                            Transcript will appear here after processing.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <ResultsSection
+            videoPlayerRef={videoPlayerRef}
+            previewURL={previewURL}
+            errorMessage={errorMessage}
+            loadingSummarize={loadingSummarize}
+            progressStep={progressStep}
+            progressPercent={progressPercent}
+            processingStages={processingStages}
+            progressStage={progressStage}
+            summaryHTML={summaryHTML}
+            handleDownloadTxt={handleDownloadTxt}
+            handleDownloadPdf={handleDownloadPdf}
+            handleDownloadDocx={handleDownloadDocx}
+            suggestedQuestions={suggestedQuestions}
+            askVideoQuestion={askVideoQuestion}
+            questionInput={questionInput}
+            setQuestionInput={setQuestionInput}
+            loadingQA={loadingQA}
+            transcriptSegments={transcriptSegments}
+            qaError={qaError}
+            qaAnswer={qaAnswer}
+            qaSources={qaSources}
+            seekVideoTo={seekVideoTo}
+            includeKeyPoints={includeKeyPoints}
+            timeKeyPoints={timeKeyPoints}
+          />
         )}
       </main>
     </div>

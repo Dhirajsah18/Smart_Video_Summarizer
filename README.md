@@ -1,101 +1,108 @@
-# Intelligent_Video_Summarization_Platform
+# AI Video Summarizer
 
-An AI-powered web application that automatically converts long videos into concise and meaningful summaries using modern Speech Recognition and Natural Language Processing models.
+AI-powered full-stack app that takes a video, extracts speech, generates a clean summary, and supports grounded Q&A from the transcript.
 
----
+## Features
 
-## Current Features (Implemented)
+- Upload video files from the web UI
+- Speech-to-text with OpenAI Whisper
+- Two transcription modes: `translate` (to English) and `transcribe` (original language)
+- Source language hint support (`auto` or 2-letter code like `hi`, `fr`)
+- Multiple summary lengths (`short`, `medium`, `long`)
+- Multiple summary styles (`general`, `business`, `student`, `casual`)
+- Time-based key points with timestamps
+- Suggested follow-up questions
+- Transcript-grounded question answering endpoint
+- Optional frame-based content moderation before processing
+- Export options in UI (TXT, PDF, DOCX)
 
-- Upload video files (MP4)
-- High-accuracy speech-to-text using OpenAI Whisper
-- Multi-language speech handling (auto-detect + source-language hint)
-- Translate non-English speech (for example French) into English before summarization
-- Indian language friendly flow (Hindi, Bengali, Tamil, Telugu, Marathi, and more)
-- Optional content moderation layer (scan sampled video frames before ASR)
-- Abstractive text summarization using BART
-- Clean text summary output
-- Simple, responsive frontend
+## Tech Stack
 
----
+- Frontend: React, Vite, Tailwind CSS, Axios
+- Backend: FastAPI, Uvicorn, Python
+- AI/ML: Whisper, Hugging Face Transformers (DistilBART default)
+- Media tools: FFmpeg, MoviePy
 
-## Tech Stack (Current)
+## Project Structure
 
-## Frontend
-- React.js
-- Vite
-- Tailwind CSS
-
-### Backend
-- Python
-- FastAPI
-
-### AI / ML
-- OpenAI Whisper (ASR)
-- BART (`facebook`)
-- Hugging Face Transformers
-
----
-
-## Application Workflow
-
-1. User uploads a video file
-2. Backend runs content moderation on sampled frames (if enabled)
-3. Backend extracts audio from the video
-4. Whisper transcribes audio (or translates it to English when selected)
-5. Transcript is cleaned and chunked
-6. BART generates an abstractive summary
-7. Results are sent back to the frontend
-
----
-## Structure
-```
+```text
 AI-video_summarizer/
-├── backend/
-│ ├── utils/
-│ ├── main.py
-│ ├── requirements.txt
-│ └── .env.example
-│
-├── frontend/
-│ ├── public/
-│ ├── src/
-│ ├── index.html
-│ ├── package.json
-│ └── vite.config.js
-│
-├── .gitignore
-└── README.md
+|-- backend/
+|   |-- main.py
+|   |-- requirements.txt
+|   |-- uploads/
+|   |-- outputs/
+|   `-- utils/
+|       |-- extract_audio.py
+|       |-- moderation.py
+|       |-- rag.py
+|       |-- summarize.py
+|       `-- transcribe.py
+|-- frontend/
+|   |-- index.html
+|   |-- package.json
+|   |-- vite.config.js
+|   |-- public/
+|   `-- src/
+`-- README.md
 ```
----
-## Screenshots
-### Frontend
-![frontend](https://github.com/user-attachments/assets/3c2da431-3a89-4ba1-8fb9-3fd751d15368)
 
-### Output
-![output](https://github.com/user-attachments/assets/11c6fd41-f6b3-4c07-8461-8ba83fb40b2d)
+## How It Works
 
----
+1. User uploads a video in frontend.
+2. Backend optionally runs moderation on sampled frames.
+3. Audio is extracted from video using FFmpeg/MoviePy.
+4. Whisper transcribes or translates audio.
+5. Summary is generated based on selected length/style.
+6. Time key points and suggested questions are prepared.
+7. Frontend shows summary, transcript, and Q&A panel.
 
-## Installation & Execution
+## Prerequisites
 
-### 1. Clone the Repository
+- Python 3.10+
+- Node.js 18+
+- FFmpeg installed and available in PATH
+
+Check FFmpeg:
+
+```bash
+ffmpeg -version
+```
+
+## Setup and Run
+
+### 1. Clone
+
 ```bash
 git clone https://github.com/Dhirajsah18/AI-video_summarizer.git
 cd AI-video_summarizer
 ```
-### 2. Backend Setup
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate            # Windows (PowerShell/CMD)
-pip install -r requirements.txt
-python -m uvicorn main:app --reload
 
+### 2. Start Backend (FastAPI)
+
+Windows PowerShell:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
-### 3. Frontend Setup
-```bash
+
+Backend health check:
+
+```text
+GET http://127.0.0.1:8000/
+```
+
+### 3. Start Frontend (Vite)
+
+In a new terminal:
+
+```powershell
 cd frontend
 npm install
 npm run dev
-
 ```
+

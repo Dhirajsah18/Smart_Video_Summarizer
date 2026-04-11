@@ -32,6 +32,12 @@ OUTPUT_DIR = Path("outputs")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+LANGUAGE_ALIASES = {
+    "hinglish": "hi",
+    "hi-en": "hi",
+    "hindi-english": "hi",
+}
+
 
 def _format_timestamp(seconds):
     total = max(0, int(seconds))
@@ -98,6 +104,7 @@ async def process_video(
         )
 
     normalized_source_language = (source_language or "auto").strip().lower()
+    normalized_source_language = LANGUAGE_ALIASES.get(normalized_source_language, normalized_source_language)
     if normalized_source_language == "auto":
         whisper_language = None
     else:
