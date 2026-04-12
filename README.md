@@ -10,6 +10,7 @@ AI-powered full-stack app that takes a video, extracts speech, generates a clean
 - Source language hint support (`auto` or 2-letter code like `hi`, `fr`)
 - Multiple summary lengths (`short`, `medium`, `long`)
 - Multiple summary styles (`general`, `business`, `student`, `casual`)
+- Optional speaker diarization (speaker labels per transcript segment)
 - Time-based key points with timestamps
 - Suggested follow-up questions
 - Transcript-grounded question answering endpoint

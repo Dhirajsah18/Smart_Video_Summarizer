@@ -27,6 +27,7 @@ export default function ResultsSection({
   seekVideoTo,
   includeKeyPoints,
   timeKeyPoints,
+  speakerDiarization,
 }) {
   return (
     <div id="results-section" className="mt-8">
@@ -146,6 +147,12 @@ export default function ResultsSection({
                 <h3 className="text-lg font-semibold text-slate-800 mb-3" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
                   Full Transcript
                 </h3>
+                {speakerDiarization?.enabled && (
+                  <p className="mb-2 text-xs text-slate-500">
+                    Diarization: {speakerDiarization.method || "unknown"}
+                    {speakerDiarization.warning ? ` (${speakerDiarization.warning})` : ""}
+                  </p>
+                )}
                 <div className="max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
                   {transcriptSegments.length > 0 ? (
                     transcriptSegments.map((segment, idx) => (
@@ -158,6 +165,11 @@ export default function ResultsSection({
                         >
                           {segment.start_label || "00:00"} - {segment.end_label || "00:00"}
                         </button>
+                        {segment.speaker && (
+                          <span className="ml-2 inline-flex rounded-full border border-slate-300 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            {segment.speaker}
+                          </span>
+                        )}
                         <p className="text-sm text-slate-700">{segment.text}</p>
                       </div>
                     ))

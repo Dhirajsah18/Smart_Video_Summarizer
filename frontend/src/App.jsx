@@ -15,11 +15,49 @@ const processingStages = [
   { key: "summarizing", label: "Generating Summary" },
 ];
 
+const stageLabelMap = {
+  queued: "Uploading video",
+  uploading: "Uploading video",
+  moderating: "Checking content safety",
+  extracting: "Extracting audio",
+  transcribing: "Transcribing speech",
+  summarizing: "Generating summary",
+  completed: "Summary ready",
+  failed: "Processing failed",
+  moderation_rejected: "Content blocked by moderation",
+  moderation_error: "Moderation service error",
+  moderation_config_error: "Moderation misconfigured",
+  video_invalid: "Invalid video file",
+  ffmpeg_missing: "FFmpeg missing",
+  audio_extraction_failed: "Audio extraction failed",
+  processing_failed: "Processing failed",
+};
+
+const stageToProgressStage = {
+  queued: "uploading",
+  uploading: "uploading",
+  moderating: "moderating",
+  extracting: "extracting",
+  transcribing: "transcribing",
+  summarizing: "summarizing",
+  completed: "summarizing",
+  failed: "summarizing",
+  moderation_rejected: "moderating",
+  moderation_error: "moderating",
+  moderation_config_error: "moderating",
+  video_invalid: "extracting",
+  ffmpeg_missing: "extracting",
+  audio_extraction_failed: "extracting",
+  processing_failed: "summarizing",
+};
+
 export default function App() {
   const uploadBoxRef = useRef(null);
   const videoUploadRef = useRef(null);
   const videoPlayerRef = useRef(null);
   const progressIntervalRef = useRef(null);
+  const jobPollTimeoutRef = useRef(null);
+  const activeJobIdRef = useRef(null);
 
   const [file, setFile] = useState(null);
   const [fileName, setFileName] = useState("No file selected");
@@ -42,6 +80,14 @@ export default function App() {
   const [outputLanguage, setOutputLanguage] = useState("english");
   const [sourceLanguage, setSourceLanguage] = useState("auto");
   const [includeKeyPoints, setIncludeKeyPoints] = useState(true);
+  const [includeSpeakerDiarization, setIncludeSpeakerDiarization] = useState(true);
+  const [speakerDiarization, setSpeakerDiarization] = useState({
+    enabled: false,
+    method: null,
+    available: false,
+    warning: null,
+    speakers: [],
+  });
   const [loadingSummarize, setLoadingSummarize] = useState(false);
   const [progressPercent, setProgressPercent] = useState(0);
   const [progressStep, setProgressStep] = useState("Waiting to start");
@@ -78,6 +124,9 @@ export default function App() {
     return () => {
       if (progressIntervalRef.current) {
         clearInterval(progressIntervalRef.current);
+      }
+      if (jobPollTimeoutRef.current) {
+        clearTimeout(jobPollTimeoutRef.current);
       }
     };
   }, []);
@@ -192,6 +241,94 @@ export default function App() {
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
+    }
+  }
+
+  function stopJobPolling() {
+    if (jobPollTimeoutRef.current) {
+      clearTimeout(jobPollTimeoutRef.current);
+      jobPollTimeoutRef.current = null;
+    }
+  }
+
+  function applyProcessingResult(data) {
+    setSummaryHTML(data.summary || "No summary returned from server.");
+    setTranscriptText(data.transcript_text || "");
+    setTranscriptSegments(Array.isArray(data.transcript_segments) ? data.transcript_segments : []);
+    setTimeKeyPoints(Array.isArray(data.time_key_points) ? data.time_key_points : []);
+    setSuggestedQuestions(Array.isArray(data.suggested_questions) ? data.suggested_questions : []);
+    setSpeakerDiarization(
+      data.speaker_diarization || {
+        enabled: false,
+        method: null,
+        available: false,
+        warning: null,
+        speakers: [],
+      }
+    );
+  }
+
+  function applyJobProgress(job) {
+    const stage = String(job?.stage || job?.status || "").toLowerCase();
+    const progressValue = Number(job?.progress);
+    const safeProgress = Number.isFinite(progressValue) ? Math.max(0, Math.min(100, progressValue)) : null;
+    const mappedStage = stageToProgressStage[stage] || "uploading";
+    const label = stageLabelMap[stage] || stageLabelMap[mappedStage] || "Processing video";
+
+    if (safeProgress !== null) {
+      setProgressPercent(safeProgress);
+    }
+    setProgressStage(mappedStage);
+    setProgressStep(label);
+  }
+
+  async function pollJobStatus(jobId) {
+    if (!jobId || activeJobIdRef.current !== jobId) {
+      return;
+    }
+
+    try {
+      const response = await api.get(`/video-jobs/${jobId}`);
+      const job = response.data || {};
+
+      if (activeJobIdRef.current !== jobId) {
+        return;
+      }
+
+      applyJobProgress(job);
+
+      const normalizedStatus = String(job.status || "").toLowerCase();
+      if (normalizedStatus === "completed") {
+        stopJobPolling();
+        stopProgressSimulation();
+        applyProcessingResult(job.result || job);
+        setProgressPercent(100);
+        setProgressStage("summarizing");
+        setProgressStep("Summary ready");
+        setLoadingSummarize(false);
+        return;
+      }
+
+      if (normalizedStatus === "failed") {
+        stopJobPolling();
+        stopProgressSimulation();
+        setErrorMessage(job.error_message || "Processing failed.");
+        setLoadingSummarize(false);
+        return;
+      }
+
+      jobPollTimeoutRef.current = setTimeout(() => {
+        void pollJobStatus(jobId);
+      }, 2500);
+    } catch (error) {
+      if (activeJobIdRef.current !== jobId) {
+        return;
+      }
+
+      setProgressStep("Waiting for job status update");
+      jobPollTimeoutRef.current = setTimeout(() => {
+        void pollJobStatus(jobId);
+      }, 4000);
     }
   }
 
@@ -362,6 +499,7 @@ export default function App() {
     formData.append("transcription_task", outputLanguage === "english" ? "translate" : "transcribe");
     formData.append("source_language", sourceLanguage);
     formData.append("include_key_points", String(includeKeyPoints));
+    formData.append("include_speaker_diarization", String(includeSpeakerDiarization));
 
     setShowResults(true);
     setLoadingSummarize(true);
@@ -371,6 +509,13 @@ export default function App() {
     setTranscriptSegments([]);
     setTimeKeyPoints([]);
     setSuggestedQuestions([]);
+    setSpeakerDiarization({
+      enabled: false,
+      method: null,
+      available: false,
+      warning: null,
+      speakers: [],
+    });
     setQuestionInput("");
     setQaAnswer("");
     setQaSources([]);
@@ -379,6 +524,10 @@ export default function App() {
     setProgressStage("uploading");
     setProgressStep("Uploading video");
     startProgressSimulation();
+    stopJobPolling();
+    activeJobIdRef.current = null;
+
+    let keepLoading = false;
 
     try {
       const res = await api.post("/process-video", formData, {
@@ -397,17 +546,27 @@ export default function App() {
       });
 
       const data = res.data || {};
-      setSummaryHTML(data.summary || "No summary returned from server.");
-      setTranscriptText(data.transcript_text || "");
-      setTranscriptSegments(Array.isArray(data.transcript_segments) ? data.transcript_segments : []);
-      setTimeKeyPoints(Array.isArray(data.time_key_points) ? data.time_key_points : []);
-      setSuggestedQuestions(Array.isArray(data.suggested_questions) ? data.suggested_questions : []);
-      stopProgressSimulation();
-      setProgressPercent(100);
-      setProgressStage("summarizing");
-      setProgressStep("Summary ready");
+      if (data?.job_id || res.status === 202 || String(data?.status || "").toLowerCase() === "queued") {
+        const jobId = data.job_id;
+        if (!jobId) {
+          throw new Error("Backend accepted the job but did not return a job id.");
+        }
+
+        keepLoading = true;
+        activeJobIdRef.current = jobId;
+        stopProgressSimulation();
+        applyJobProgress(data);
+        void pollJobStatus(jobId);
+      } else {
+        applyProcessingResult(data);
+        stopProgressSimulation();
+        setProgressPercent(100);
+        setProgressStage("summarizing");
+        setProgressStep("Summary ready");
+      }
     } catch (e) {
       stopProgressSimulation();
+      stopJobPolling();
       const backendPayload = e?.response?.data;
       const status = e?.response?.status;
       const backendDetail = backendPayload?.detail;
@@ -433,7 +592,9 @@ export default function App() {
       console.error("Summarize API error (raw):", e);
       console.error("Summarize API error (debug):", debugInfo);
     } finally {
-      setLoadingSummarize(false);
+      if (!keepLoading) {
+        setLoadingSummarize(false);
+      }
     }
   };
 
@@ -511,6 +672,8 @@ export default function App() {
             setSourceLanguage={setSourceLanguage}
             includeKeyPoints={includeKeyPoints}
             setIncludeKeyPoints={setIncludeKeyPoints}
+            includeSpeakerDiarization={includeSpeakerDiarization}
+            setIncludeSpeakerDiarization={setIncludeSpeakerDiarization}
             file={file}
             handleBrowseClick={handleBrowseClick}
             onDragOver={onDragOver}
@@ -547,6 +710,7 @@ export default function App() {
             seekVideoTo={seekVideoTo}
             includeKeyPoints={includeKeyPoints}
             timeKeyPoints={timeKeyPoints}
+            speakerDiarization={speakerDiarization}
           />
         )}
       </main>

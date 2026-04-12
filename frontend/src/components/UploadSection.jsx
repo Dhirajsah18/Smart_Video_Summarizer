@@ -14,6 +14,8 @@ export default function UploadSection({
   setSourceLanguage,
   includeKeyPoints,
   setIncludeKeyPoints,
+  includeSpeakerDiarization,
+  setIncludeSpeakerDiarization,
   file,
   handleBrowseClick,
   onDragOver,
@@ -155,6 +157,15 @@ export default function UploadSection({
             onChange={(e) => setIncludeKeyPoints(e.target.checked)}
           />
           Generate time-based key points (slightly slower)
+        </label>
+        <label className="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+            checked={includeSpeakerDiarization}
+            onChange={(e) => setIncludeSpeakerDiarization(e.target.checked)}
+          />
+          Detect speaker turns (diarization)
         </label>
       </div>
 
