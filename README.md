@@ -94,13 +94,14 @@ npm install
 npm run dev
 ```
 
-By default the frontend talks to `http://127.0.0.1:8000`. To change it, set `VITE_API_BASE_URL` in the frontend environment.
+By default the frontend talks to `http://127.0.0.1:8000`. To change it, set `VITE_API_URL` (or `VITE_API_BASE_URL`) in the frontend environment.
 
 ## Configuration
 
 Useful backend environment variables:
 
 - `ALLOWED_ORIGINS`: CORS allowlist, default `http://localhost:5173`
+- `ALLOWED_ORIGIN_REGEX`: optional regex for dynamic origins (for example Vercel preview URLs)
 - `ASYNC_VIDEO_PROCESSING`: queue video jobs in the background, default `true`
 - `VIDEO_PROCESSING_WORKERS`: worker count for async jobs, default `2`
 - `CONTENT_MODERATION_ENABLED`: enable moderation service calls, default `false`
@@ -140,4 +141,3 @@ Useful backend environment variables:
 
 - If transcription fails immediately, verify FFmpeg is installed and reachable from the backend process.
 - If diarization is enabled but unavailable, add a valid Hugging Face or PyAnnote token.
-- If the frontend cannot reach the backend, check `ALLOWED_ORIGINS` and `VITE_API_BASE_URL`.
