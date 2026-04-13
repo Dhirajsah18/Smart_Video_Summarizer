@@ -330,6 +330,18 @@ export default function App() {
         return;
       }
 
+      const status = error?.response?.status;
+      if (status === 404) {
+        stopJobPolling();
+        stopProgressSimulation();
+        activeJobIdRef.current = null;
+        setLoadingSummarize(false);
+        setErrorMessage(
+          "Processing job not found on backend (404). This usually happens if the server restarted or job state was reset. Please upload and process the video again."
+        );
+        return;
+      }
+
       setProgressStep("Waiting for job status update");
       jobPollTimeoutRef.current = setTimeout(() => {
         void pollJobStatus(jobId);
