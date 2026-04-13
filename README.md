@@ -1,30 +1,36 @@
 # Smart Video Summarizer
 
-AI-powered full-stack app that takes a video, extracts speech, generates a clean summary, and supports grounded Q&A from the transcript.
+AI-powered full-stack app that uploads a video, extracts speech, generates a summary, and supports transcript-grounded Q&A with export options.
+
+## What It Does
+
+- Upload a video from the web UI and process it through the backend pipeline.
+- Extract audio, transcribe or translate speech with Whisper, and summarize the result.
+- Generate time-based key points and suggested follow-up questions.
+- Answer questions using the uploaded video transcript as grounded context.
+- Optionally run content moderation before processing.
+- Export the final result as TXT, PDF, or DOCX.
 
 ## Features
 
-- Upload video files from the web UI
-- Speech-to-text with OpenAI Whisper
-- Two transcription modes: `translate` (to English) and `transcribe` (original language)
-- Source language hint support (`auto` or 2-letter code like `hi`, `fr`)
-- Multiple summary lengths (`short`, `medium`, `long`)
-- Multiple summary styles (`general`, `business`, `student`, `casual`)
-- Optional speaker diarization (speaker labels per transcript segment)
-- Time-based key points with timestamps
-- Suggested follow-up questions
-- Transcript-grounded question answering endpoint
-- Optional frame-based content moderation before processing
-- Export options in UI (TXT, PDF, DOCX)
+- Transcription modes: `translate` for English output and `transcribe` for original-language output.
+- Source language hint support with `auto` or a 2-letter code such as `hi` or `fr`.
+- Summary lengths: `short`, `medium`, and `long`.
+- Summary styles: `general`, `business`, `student`, and `casual`.
+- Optional speaker diarization with speaker labels in the transcript.
+- Time-based key points with readable timestamps.
+- Suggested follow-up questions generated from the summary and transcript.
+- Job polling for async processing so long videos can run in the background.
+- Job history stored in SQLite under `backend/outputs/job_history.sqlite3`.
 
 ## Tech Stack
 
 - Frontend: React, Vite, Tailwind CSS, Axios
 - Backend: FastAPI, Uvicorn, Python
-- AI/ML: Whisper, Hugging Face Transformers (DistilBART default)
+- AI/ML: Whisper, Hugging Face Transformers, SentencePiece, PyTorch
 - Media tools: FFmpeg, MoviePy
 
-## Project Structure
+## Project Layout
 
 ```text
 AI-video_summarizer/
@@ -34,54 +40,35 @@ AI-video_summarizer/
 |   |-- uploads/
 |   |-- outputs/
 |   `-- utils/
+|       |-- diarize.py
 |       |-- extract_audio.py
+|       |-- job_store.py
 |       |-- moderation.py
 |       |-- rag.py
 |       |-- summarize.py
 |       `-- transcribe.py
 |-- frontend/
-|   |-- index.html
 |   |-- package.json
 |   |-- vite.config.js
-|   |-- public/
 |   `-- src/
 `-- README.md
 ```
 
-## How It Works
+## Requirements
 
-1. User uploads a video in frontend.
-2. Backend optionally runs moderation on sampled frames.
-3. Audio is extracted from video using FFmpeg/MoviePy.
-4. Whisper transcribes or translates audio.
-5. Summary is generated based on selected length/style.
-6. Time key points and suggested questions are prepared.
-7. Frontend shows summary, transcript, and Q&A panel.
-
-## Prerequisites
-
-- Python 3.10+
-- Node.js 18+
-- FFmpeg installed and available in PATH
+- Python 3.10 or newer
+- Node.js 18 or newer
+- FFmpeg available on PATH
 
 Check FFmpeg:
 
-```bash
+```powershell
 ffmpeg -version
 ```
 
-## Setup and Run
+## Setup
 
-### 1. Clone
-
-```bash
-git clone https://github.com/Dhirajsah18/AI-video_summarizer.git
-cd AI-video_summarizer
-```
-
-### 2. Start Backend (FastAPI)
-
-Windows PowerShell:
+### 1. Backend
 
 ```powershell
 cd backend
@@ -97,9 +84,9 @@ Backend health check:
 GET http://127.0.0.1:8000/
 ```
 
-### 3. Start Frontend (Vite)
+### 2. Frontend
 
-In a new terminal:
+Open a new terminal:
 
 ```powershell
 cd frontend
@@ -107,3 +94,50 @@ npm install
 npm run dev
 ```
 
+By default the frontend talks to `http://127.0.0.1:8000`. To change it, set `VITE_API_BASE_URL` in the frontend environment.
+
+## Configuration
+
+Useful backend environment variables:
+
+- `ALLOWED_ORIGINS`: CORS allowlist, default `http://localhost:5173`
+- `ASYNC_VIDEO_PROCESSING`: queue video jobs in the background, default `true`
+- `VIDEO_PROCESSING_WORKERS`: worker count for async jobs, default `2`
+- `CONTENT_MODERATION_ENABLED`: enable moderation service calls, default `false`
+- `CONTENT_MODERATION_API_URL`: moderation service URL
+- `CONTENT_MODERATION_API_KEY`: moderation service API key
+- `CONTENT_MODERATION_THRESHOLD`: moderation confidence threshold, default `0.65`
+- `CONTENT_MODERATION_FRAME_INTERVAL_SECONDS`: frame sampling interval, default `4`
+- `CONTENT_MODERATION_MAX_FRAMES`: max frames to inspect, default `6`
+- `CONTENT_MODERATION_TIMEOUT_SECONDS`: moderation request timeout, default `20`
+- `CONTENT_MODERATION_ALLOW_BYPASS`: allow processing when moderation is disabled, default `true`
+- `WHISPER_MODEL`: Whisper model name, default `tiny`
+- `WHISPER_ENGLISH_MODEL`: English-only Whisper model, default `tiny.en`
+- `WHISPER_BEAM_SIZE`: Whisper beam size, default `1`
+- `WHISPER_BEST_OF`: Whisper best-of count, default `1`
+- `WHISPER_CPU_THREADS`: optional CPU thread limit
+- `WHISPER_HINGLISH_PROMPT`: custom prompt for code-switched speech
+- `SUMMARIZER_MODEL`: summarization model, default `sshleifer/distilbart-cnn-12-6`
+- `FAST_SUMMARY_TRIGGER_WORDS`: use extractive fast path above this word count, default `1800`
+- `FAST_KEY_POINT_TRIGGER_SEGMENTS`: use fast key-point path above this segment count, default `40`
+- `PYANNOTE_TOKEN` or `HUGGINGFACE_TOKEN`: optional token for speaker diarization
+
+## API Endpoints
+
+- `GET /`: simple backend health response
+- `POST /process-video`: upload and process a video
+- `GET /video-jobs/{job_id}`: fetch job progress and result
+- `GET /video-jobs`: list recent jobs
+- `POST /ask-video`: ask a question against the transcript
+
+## Notes
+
+- Uploaded files are written to `backend/uploads/` during processing and cleaned up after the job finishes.
+- Generated artifacts and job history live under `backend/outputs/`.
+- Long videos can take a while; use the job status endpoint if the frontend shows a queued state.
+
+## Troubleshooting
+
+- If transcription fails immediately, verify FFmpeg is installed and reachable from the backend process.
+- If diarization is enabled but unavailable, add a valid Hugging Face or PyAnnote token.
+- If the frontend cannot reach the backend, check `ALLOWED_ORIGINS` and `VITE_API_BASE_URL`.
