@@ -70,6 +70,26 @@ def _parse_bool(value, default=True):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_int_env(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return default
+
+
+def _parse_float_env(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(str(value).strip())
+    except ValueError:
+        return default
+
+
 ASYNC_VIDEO_PROCESSING = _parse_bool(os.getenv("ASYNC_VIDEO_PROCESSING", "true"), default=True)
 
 
@@ -145,10 +165,10 @@ def _process_video_pipeline(*, job_id, safe_name, video_path, audio_path, normal
             enabled=os.getenv("CONTENT_MODERATION_ENABLED", "false"),
             api_url=os.getenv("CONTENT_MODERATION_API_URL", "").strip(),
             api_key=os.getenv("CONTENT_MODERATION_API_KEY", "").strip() or None,
-            threshold=os.getenv("CONTENT_MODERATION_THRESHOLD", "0.65"),
-            frame_interval_seconds=os.getenv("CONTENT_MODERATION_FRAME_INTERVAL_SECONDS", "4"),
-            max_frames=os.getenv("CONTENT_MODERATION_MAX_FRAMES", "6"),
-            timeout_seconds=os.getenv("CONTENT_MODERATION_TIMEOUT_SECONDS", "20"),
+            threshold=_parse_float_env("CONTENT_MODERATION_THRESHOLD", 0.65),
+            frame_interval_seconds=_parse_int_env("CONTENT_MODERATION_FRAME_INTERVAL_SECONDS", 4),
+            max_frames=_parse_int_env("CONTENT_MODERATION_MAX_FRAMES", 6),
+            timeout_seconds=_parse_int_env("CONTENT_MODERATION_TIMEOUT_SECONDS", 20),
         )
         _ensure_moderation_passed(moderation_result)
 

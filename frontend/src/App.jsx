@@ -7,6 +7,11 @@ import AppHeader from "./components/AppHeader";
 import UploadSection from "./components/UploadSection";
 import ResultsSection from "./components/ResultsSection";
 
+const apiBaseUrl =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:8000";
+
 const processingStages = [
   { key: "uploading", label: "Uploading Video" },
   { key: "moderating", label: "Checking Content Safety" },
@@ -587,7 +592,9 @@ export default function App() {
       } else if (status) {
         setErrorMessage(`Request failed with status ${status}. Check backend logs for details.`);
       } else {
-        setErrorMessage("Network/CORS error. Backend may be down or blocked by CORS.");
+        setErrorMessage(
+          `Network/CORS error. Backend may be down, blocked by CORS, or API URL is wrong. Current API URL: ${apiBaseUrl}`
+        );
       }
       console.error("Summarize API error (raw):", e);
       console.error("Summarize API error (debug):", debugInfo);
