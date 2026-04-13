@@ -302,7 +302,7 @@ async def process_video(
     transcription_task: str = Form("translate"),
     source_language: str = Form("auto"),
     include_key_points: str = Form("true"),
-    include_speaker_diarization: str = Form("true"),
+    include_speaker_diarization: str = Form("false"),
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="File name is missing.")
@@ -334,7 +334,7 @@ async def process_video(
             )
         whisper_language = normalized_source_language
     include_key_points_enabled = _parse_bool(include_key_points, default=True)
-    include_speaker_diarization_enabled = _parse_bool(include_speaker_diarization, default=True)
+    include_speaker_diarization_enabled = _parse_bool(include_speaker_diarization, default=False)
 
     safe_name = Path(file.filename).name
     request_id = uuid4().hex

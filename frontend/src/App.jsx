@@ -85,7 +85,7 @@ export default function App() {
   const [outputLanguage, setOutputLanguage] = useState("english");
   const [sourceLanguage, setSourceLanguage] = useState("auto");
   const [includeKeyPoints, setIncludeKeyPoints] = useState(true);
-  const [includeSpeakerDiarization, setIncludeSpeakerDiarization] = useState(true);
+  const [includeSpeakerDiarization, setIncludeSpeakerDiarization] = useState(false);
   const [speakerDiarization, setSpeakerDiarization] = useState({
     enabled: false,
     method: null,

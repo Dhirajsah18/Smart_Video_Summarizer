@@ -9,6 +9,12 @@ ENGLISH_MODEL_NAME = os.getenv("WHISPER_ENGLISH_MODEL", "tiny.en").strip() or "t
 WHISPER_BEAM_SIZE = max(1, int(os.getenv("WHISPER_BEAM_SIZE", "1")))
 WHISPER_BEST_OF = max(1, int(os.getenv("WHISPER_BEST_OF", "1")))
 WHISPER_CPU_THREADS = max(0, int(os.getenv("WHISPER_CPU_THREADS", "0")))
+WHISPER_AUTO_LANGUAGE_RETRY = str(os.getenv("WHISPER_AUTO_LANGUAGE_RETRY", "false")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 WHISPER_HINGLISH_PROMPT = (
     os.getenv(
         "WHISPER_HINGLISH_PROMPT",
@@ -52,7 +58,7 @@ def transcribe_audio(audio_path, task="translate", language=None):
         "condition_on_previous_text": False,
         "beam_size": WHISPER_BEAM_SIZE,
         "best_of": WHISPER_BEST_OF,
-        "temperature": (0.0, 0.2, 0.4),
+        "temperature": 0.0,
         "compression_ratio_threshold": 2.4,
         "no_speech_threshold": 0.55,
         "logprob_threshold": -1.0,
@@ -84,7 +90,7 @@ def transcribe_audio(audio_path, task="translate", language=None):
 
     # For auto language, Whisper can drift on code-switched Indian speech.
     # Retry with explicit Hindi and English hints and keep the best candidate.
-    if not language and task in {"transcribe", "translate"}:
+    if WHISPER_AUTO_LANGUAGE_RETRY and not language and task in {"transcribe", "translate"}:
         candidates = [result]
         for hinted_lang in ("hi", "en"):
             retry_options = dict(base_options)
